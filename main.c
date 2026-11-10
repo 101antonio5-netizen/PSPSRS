@@ -429,7 +429,7 @@ static void copy_field(char *dst, size_t dst_size, const char *src, size_t src_l
         unsigned char ch = (unsigned char)src[i];
         size_t n = 1, k;
         int valid = 1;
-
+        /*needs improvement on the byte validation */
         if (ch < 0x20)                    { n = 1; ch = ' '; }          /* control char -> space */
         else if (ch < 0x80)               { n = 1; }
         else if (ch >= 0xC2 && ch <= 0xDF) n = 2;
