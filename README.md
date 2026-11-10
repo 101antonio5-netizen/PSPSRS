@@ -13,3 +13,5 @@ make
 ```
 
 This configures and builds the project. The resulting `eboot.pbp` is generated in the build directory.
+
+The program requires a flascard deck, in the format of a .tsv file, with two tables (front / back). It can load any deck that has less than 2000 cards.
