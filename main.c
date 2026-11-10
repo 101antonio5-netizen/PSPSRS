@@ -421,18 +421,18 @@ static int has_non_ascii(const char *s) {
 /* Copy one field into a fixed buffer, keeping valid UTF-8 text intact. Control
    characters become spaces and invalid UTF-8 bytes become '?'. A field that is too
    long is cut at a character boundary (never in the middle of an accented letter). */
-type struct {
-   int truncated;
-   int replaced_bytes;
+typedef struct {
+    int truncated;
+    int replaced_bytes;
 } FieldStats;
 
 static FieldStats copy_fields(char *dst, size_t dst_size, const char *src, size_t src_len) {
-   FieldStats stats = { 0 , 0 };
-   size_t i = 0, o = 0;
-   int cut = 0;
+    FieldStats stats = { 0, 0 };
+    size_t i = 0, o = 0;
+    int cut = 0;
 
-   if (dst_size == 0) return stats;
-   dst[0] = '\0';
+    if (dst_size == 0) return stats;
+    dst[0] = '\0';
 
     while (i < src_len) {
         unsigned char ch = (unsigned char)src[i];
@@ -440,7 +440,7 @@ static FieldStats copy_fields(char *dst, size_t dst_size, const char *src, size_
         int valid = 1;
 
         if (ch < 0x20) {
-            ch = ' ';        /* control chars -> space */
+            ch = ' ';
         } else if (ch < 0x80) {
             /* ASCII */
         } else if (ch >= 0xC2 && ch <= 0xDF) {
@@ -459,14 +459,13 @@ static FieldStats copy_fields(char *dst, size_t dst_size, const char *src, size_
             if (i + n > src_len) {
                 valid = 0;
             } else {
-                /* Reject overlong encodings and invalid continuation bytes. */
                 if (n == 2) {
                     if (ch < 0xC2) valid = 0;
                 } else if (n == 3) {
                     unsigned char c1 = (unsigned char)src[i + 1];
                     if (ch == 0xE0 && c1 < 0xA0) valid = 0;
-                    if (ch == 0xED && c1 > 0x9F) valid = 0;
-                } else if (n == 4) {
+
+                   } else if (n == 4) {
                     unsigned char c1 = (unsigned char)src[i + 1];
                     if (ch == 0xF0 && c1 < 0x90) valid = 0;
                     if (ch == 0xF4 && c1 > 0x8F) valid = 0;
