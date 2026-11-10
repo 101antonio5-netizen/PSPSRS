@@ -429,18 +429,33 @@ static void copy_field(char *dst, size_t dst_size, const char *src, size_t src_l
         unsigned char ch = (unsigned char)src[i];
         size_t n = 1, k;
         int valid = 1;
-        /*needs improvement on the byte validation */
-        if (ch < 0x20)                    { n = 1; ch = ' '; }          /* control char -> space */
-        else if (ch < 0x80)               { n = 1; }
+
+        if (ch < 0x20)                     { n = 1; ch = ' '; }          /* control char -> space */
+        else if (ch < 0x80)                { n = 1; }
         else if (ch >= 0xC2 && ch <= 0xDF) n = 2;
         else if (ch >= 0xE0 && ch <= 0xEF) n = 3;
         else if (ch >= 0xF0 && ch <= 0xF4) n = 4;
-        else                               valid = 0;                   /* stray byte */
+        else                               valid = 0;                   /* stray byte or > 0xF4 */
 
         if (valid && n > 1) {
-            if (i + n > src_len) valid = 0;
-            for (k = 1; valid && k < n; k++)
-                if (((unsigned char)src[i + k] & 0xC0) != 0x80) valid = 0;
+            if (i + n > src_len) {
+                valid = 0;
+            } else {
+                unsigned char c1 = (unsigned char)src[i + 1];
+
+                /* Reject overlongs, UTF-16 surrogates, and values > U+10FFFF */
+                if (n == 3) {
+                    if (ch == 0xE0 && c1 < 0xA0) valid = 0;             /* overlong 3-byte */
+                    if (ch == 0xED && c1 > 0x9F) valid = 0;             /* UTF-16 surrogate */
+                } else if (n == 4) {
+                    if (ch == 0xF0 && c1 < 0x90) valid = 0;             /* overlong 4-byte */
+                    if (ch == 0xF4 && c1 > 0x8F) valid = 0;             /* > U+10FFFF */
+                }
+
+                for (k = 1; valid && k < n; k++) {
+                    if (((unsigned char)src[i + k] & 0xC0) != 0x80) valid = 0;
+                }
+            }
         }
 
         if (!valid) {                                     /* one '?' per bad byte */
@@ -451,7 +466,7 @@ static void copy_field(char *dst, size_t dst_size, const char *src, size_t src_l
             continue;
         }
 
-        if (o + n + 1 > dst_size) { cut = 1; break; }     /* keep room for the final NUL */
+        if (o + n + 1 > dst_size) { cut = 1; break; }
         if (n == 1) {
             dst[o++] = (char)ch;
         } else {
