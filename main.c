@@ -421,13 +421,18 @@ static int has_non_ascii(const char *s) {
 /* Copy one field into a fixed buffer, keeping valid UTF-8 text intact. Control
    characters become spaces and invalid UTF-8 bytes become '?'. A field that is too
    long is cut at a character boundary (never in the middle of an accented letter). */
+type struct {
+   int truncated;
+   int replaced_bytes;
+} FieldStats;
 
-static void copy_field(char *dst, size_t dst_size, const char *src, size_t src_len) {
-    size_t i = 0, o = 0;
-    int cut = 0;
+static FieldStats copy_fields(char *dst, size_t dst_size, const char *src, size_t src_len) {
+   FieldStats stats = { 0 , 0 };
+   size_t i = 0, o = 0;
+   int cut = 0;
 
-    if (dst_size == 0) return;
-    dst[0] = '\0';
+   if (dst_size == 0) return stats;
+   dst[0] = '\0';
 
     while (i < src_len) {
         unsigned char ch = (unsigned char)src[i];
@@ -482,7 +487,7 @@ static void copy_field(char *dst, size_t dst_size, const char *src, size_t src_l
             }
             dst[o++] = '?';
             dst[o] = '\0';
-            replaced_chars++;
+            stats.replaced_bytes++;
             i++;
             continue;
         }
@@ -498,7 +503,8 @@ static void copy_field(char *dst, size_t dst_size, const char *src, size_t src_l
         i += n;
     }
 
-    if (cut) truncated++;
+    if (cut) stats.truncated;
+    return stats;
 }
 /* Returns the number of cards loaded, or -1 if the file can't be opened. */
 static int load_deck(const char *path) {
@@ -522,6 +528,7 @@ static int load_deck(const char *path) {
         size_t len = strlen(line);
         size_t front_len, back_len;
         Card *c;
+        FieldStats field_stats;
 
         /* Line longer than the buffer: throw away the rest of it. */
         if (len > 0 && line[len - 1] != '\n' && !feof(f)) {
@@ -556,17 +563,28 @@ static int load_deck(const char *path) {
         if (front_len == 0 || back_len == 0) { skipped_lines++; continue; }
 
         c = &cards[num_cards++];
-        copy_field(c->front, FRONT_LEN, start, front_len);
+        /*copy_field(c->front, FRONT_LEN, start, front_len);
         copy_field(c->back,  BACK_LEN,  back,  back_len);
+        */
+        field_stats = copy_field(c->front, FRONT_LEN, start, front_len);
+        truncated += field_stats.truncated;
+        replaced_chars += field_stats.replaced_bytes;
 
+        field_stats = copy_field(c->back, BACK_LEN, back, back_len);
+        truncated += field_stats.truncated;
+        replaced_chars += field_stats.replaced_bytes;
+       
         c->id[0] = '\0';
         if (tab2) {
-            int t_save = truncated, r_save = replaced_chars;
+            /*int t_save = truncated, r_save = replaced_chars;
             const char *idp = tab2 + 1;
             tab3 = strchr(idp, '\t');
             copy_field(c->id, ID_LEN, idp, tab3 ? (size_t)(tab3 - idp) : strlen(idp));
             truncated = t_save;               /* IDs don't count in the loader stats */
-            replaced_chars = r_save;
+            replaced_chars = r_save; 
+            */
+            (void)copy_field(c->id, ID_LEN, idp,
+                             tab3 ? (size_t)(tab3 - idp) : strlen(idp));
         }
 
         c->reps       = 0;
