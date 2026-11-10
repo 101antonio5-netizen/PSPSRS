@@ -421,65 +421,85 @@ static int has_non_ascii(const char *s) {
 /* Copy one field into a fixed buffer, keeping valid UTF-8 text intact. Control
    characters become spaces and invalid UTF-8 bytes become '?'. A field that is too
    long is cut at a character boundary (never in the middle of an accented letter). */
+
 static void copy_field(char *dst, size_t dst_size, const char *src, size_t src_len) {
     size_t i = 0, o = 0;
     int cut = 0;
 
+    if (dst_size == 0) return;
+    dst[0] = '\0';
+
     while (i < src_len) {
         unsigned char ch = (unsigned char)src[i];
-        size_t n = 1, k;
+        size_t n = 1;
         int valid = 1;
 
-        if (ch < 0x20)                     { n = 1; ch = ' '; }          /* control char -> space */
-        else if (ch < 0x80)                { n = 1; }
-        else if (ch >= 0xC2 && ch <= 0xDF) n = 2;
-        else if (ch >= 0xE0 && ch <= 0xEF) n = 3;
-        else if (ch >= 0xF0 && ch <= 0xF4) n = 4;
-        else                               valid = 0;                   /* stray byte or > 0xF4 */
+        if (ch < 0x20) {
+            ch = ' ';        /* control chars -> space */
+        } else if (ch < 0x80) {
+            /* ASCII */
+        } else if (ch >= 0xC2 && ch <= 0xDF) {
+            n = 2;
+        } else if (ch >= 0xE0 && ch <= 0xEF) {
+            n = 3;
+        } else if (ch >= 0xF0 && ch <= 0xF4) {
+            n = 4;
+        } else {
+            valid = 0;
+        }
 
         if (valid && n > 1) {
+            size_t k;
+
             if (i + n > src_len) {
                 valid = 0;
             } else {
-                unsigned char c1 = (unsigned char)src[i + 1];
-
-                /* Reject overlongs, UTF-16 surrogates, and values > U+10FFFF */
-                if (n == 3) {
-                    if (ch == 0xE0 && c1 < 0xA0) valid = 0;             /* overlong 3-byte */
-                    if (ch == 0xED && c1 > 0x9F) valid = 0;             /* UTF-16 surrogate */
+                /* Reject overlong encodings and invalid continuation bytes. */
+                if (n == 2) {
+                    if (ch < 0xC2) valid = 0;
+                } else if (n == 3) {
+                    unsigned char c1 = (unsigned char)src[i + 1];
+                    if (ch == 0xE0 && c1 < 0xA0) valid = 0;
+                    if (ch == 0xED && c1 > 0x9F) valid = 0;
                 } else if (n == 4) {
-                    if (ch == 0xF0 && c1 < 0x90) valid = 0;             /* overlong 4-byte */
-                    if (ch == 0xF4 && c1 > 0x8F) valid = 0;             /* > U+10FFFF */
+                    unsigned char c1 = (unsigned char)src[i + 1];
+                    if (ch == 0xF0 && c1 < 0x90) valid = 0;
+                    if (ch == 0xF4 && c1 > 0x8F) valid = 0;
                 }
 
                 for (k = 1; valid && k < n; k++) {
-                    if (((unsigned char)src[i + k] & 0xC0) != 0x80) valid = 0;
+                    if (((unsigned char)src[i + k] & 0xC0) != 0x80)
+                        valid = 0;
                 }
             }
         }
 
-        if (!valid) {                                     /* one '?' per bad byte */
-            if (o + 2 > dst_size) { cut = 1; break; }
+        if (!valid) {
+            /* One '?' per invalid byte, but never write past dst_size. */
+            if (o + 2 > dst_size) {
+                cut = 1;
+                break;
+            }
             dst[o++] = '?';
+            dst[o] = '\0';
             replaced_chars++;
             i++;
             continue;
         }
 
-        if (o + n + 1 > dst_size) { cut = 1; break; }
-        if (n == 1) {
-            dst[o++] = (char)ch;
-        } else {
-            for (k = 0; k < n; k++) dst[o + k] = src[i + k];
-            o += n;
+        if (o + n + 1 > dst_size) {
+            cut = 1;
+            break;
         }
+
+        memcpy(dst + o, src + i, n);
+        o += n;
+        dst[o] = '\0';
         i += n;
     }
 
-    dst[o] = '\0';
     if (cut) truncated++;
 }
-
 /* Returns the number of cards loaded, or -1 if the file can't be opened. */
 static int load_deck(const char *path) {
     static char line[LINE_LEN];
