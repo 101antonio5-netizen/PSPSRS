@@ -18,7 +18,7 @@ The program requires a flascard deck, in the format of a .tsv file, with two tab
 
 ## Cards and limitations
 
-The number of cards per deck is 2000, with each card limited up to 440 bytes, wich is enough to host a small vocabulary. Any card beyond the said number is ignored by the code, so there is no reason add more than that. 
+The number of cards per deck is 2000, with each card limited up to 128 bytes for the front, 256 for the back, wich is enough to host a small vocabulary. Any card beyond the said number is ignored by the code, so there is no reason add more than that. 
 
 ## Saving progress
 
