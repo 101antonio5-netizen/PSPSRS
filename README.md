@@ -15,3 +15,8 @@ make
 This configures and builds the project. The resulting `eboot.pbp` is generated in the build directory.
 
 The program requires a flascard deck, in the format of a .tsv file, with two tables (front / back). It can load any deck that has less than 2000 cards.
+
+## Cards and limitations
+
+The number of cards per deck is 2000, with each card limited up to 440 bytes, wich is enough to host a small vocabulary. Any card beyond the said number is ignored by the code, so there is no reason add more than that. 
+
