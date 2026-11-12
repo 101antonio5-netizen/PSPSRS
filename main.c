@@ -421,85 +421,50 @@ static int has_non_ascii(const char *s) {
 /* Copy one field into a fixed buffer, keeping valid UTF-8 text intact. Control
    characters become spaces and invalid UTF-8 bytes become '?'. A field that is too
    long is cut at a character boundary (never in the middle of an accented letter). */
-
 static void copy_field(char *dst, size_t dst_size, const char *src, size_t src_len) {
     size_t i = 0, o = 0;
     int cut = 0;
 
-    if (dst_size == 0) return;
-    dst[0] = '\0';
-
     while (i < src_len) {
         unsigned char ch = (unsigned char)src[i];
-        size_t n = 1;
+        size_t n = 1, k;
         int valid = 1;
 
-        if (ch < 0x20) {
-            ch = ' ';        /* control chars -> space */
-        } else if (ch < 0x80) {
-            /* ASCII */
-        } else if (ch >= 0xC2 && ch <= 0xDF) {
-            n = 2;
-        } else if (ch >= 0xE0 && ch <= 0xEF) {
-            n = 3;
-        } else if (ch >= 0xF0 && ch <= 0xF4) {
-            n = 4;
-        } else {
-            valid = 0;
-        }
+        if (ch < 0x20)                    { n = 1; ch = ' '; }          /* control char -> space */
+        else if (ch < 0x80)               { n = 1; }
+        else if (ch >= 0xC2 && ch <= 0xDF) n = 2;
+        else if (ch >= 0xE0 && ch <= 0xEF) n = 3;
+        else if (ch >= 0xF0 && ch <= 0xF4) n = 4;
+        else                               valid = 0;                   /* stray byte */
 
         if (valid && n > 1) {
-            size_t k;
-
-            if (i + n > src_len) {
-                valid = 0;
-            } else {
-                /* Reject overlong encodings and invalid continuation bytes. */
-                if (n == 2) {
-                    if (ch < 0xC2) valid = 0;
-                } else if (n == 3) {
-                    unsigned char c1 = (unsigned char)src[i + 1];
-                    if (ch == 0xE0 && c1 < 0xA0) valid = 0;
-                    if (ch == 0xED && c1 > 0x9F) valid = 0;
-                } else if (n == 4) {
-                    unsigned char c1 = (unsigned char)src[i + 1];
-                    if (ch == 0xF0 && c1 < 0x90) valid = 0;
-                    if (ch == 0xF4 && c1 > 0x8F) valid = 0;
-                }
-
-                for (k = 1; valid && k < n; k++) {
-                    if (((unsigned char)src[i + k] & 0xC0) != 0x80)
-                        valid = 0;
-                }
-            }
+            if (i + n > src_len) valid = 0;
+            for (k = 1; valid && k < n; k++)
+                if (((unsigned char)src[i + k] & 0xC0) != 0x80) valid = 0;
         }
 
-        if (!valid) {
-            /* One '?' per invalid byte, but never write past dst_size. */
-            if (o + 2 > dst_size) {
-                cut = 1;
-                break;
-            }
+        if (!valid) {                                     /* one '?' per bad byte */
+            if (o + 2 > dst_size) { cut = 1; break; }
             dst[o++] = '?';
-            dst[o] = '\0';
             replaced_chars++;
             i++;
             continue;
         }
 
-        if (o + n + 1 > dst_size) {
-            cut = 1;
-            break;
+        if (o + n + 1 > dst_size) { cut = 1; break; }     /* keep room for the final NUL */
+        if (n == 1) {
+            dst[o++] = (char)ch;
+        } else {
+            for (k = 0; k < n; k++) dst[o + k] = src[i + k];
+            o += n;
         }
-
-        memcpy(dst + o, src + i, n);
-        o += n;
-        dst[o] = '\0';
         i += n;
     }
 
+    dst[o] = '\0';
     if (cut) truncated++;
 }
+
 /* Returns the number of cards loaded, or -1 if the file can't be opened. */
 static int load_deck(const char *path) {
     static char line[LINE_LEN];
@@ -843,6 +808,30 @@ static int open_deck(int idx) {
 
 /* ---------- SM-2 and scheduling ---------- */
 
+/* Interval (in days) that a successful answer q (3 = Hard, 4 = Good, 5 = Easy)
+   would give. The three results are always strictly increasing, even for tiny
+   intervals, so the buttons never show the same value. */
+static int next_interval(const Card *c, int q) {
+    int hard, good, easy;
+
+    if (c->reps == 0) {                       /* new or relearning card */
+        hard = 1; good = 2; easy = 4;
+    } else {
+        float base = (float)c->interval;
+        hard = (int)(base * 1.2f + 0.5f);
+        good = (int)(base * c->ease + 0.5f);
+        easy = (int)(base * c->ease * 1.3f + 0.5f);
+
+        if (hard < 1)        hard = 1;
+        if (good < hard + 1) good = hard + 1;
+        if (easy < good + 1) easy = good + 1;
+    }
+
+    if (q <= 3) return hard;
+    if (q == 4) return good;
+    return easy;
+}
+
 /* q: 0..5 quality of recall. Below 3 counts as a lapse. */
 static void sm2_review(Card *c, int q, long today) {
     if (q < 3) {
@@ -852,11 +841,9 @@ static void sm2_review(Card *c, int q, long today) {
         return;
     }
 
-    if (c->reps == 0)      c->interval = 1;
-    else if (c->reps == 1) c->interval = 6;
-    else                   c->interval = (int)(c->interval * c->ease + 0.5f);
-
+    c->interval = next_interval(c, q);   /* uses the OLD ease and interval */
     c->reps++;
+
     c->ease += 0.1f - (5 - q) * (0.08f + (5 - q) * 0.02f);
     if (c->ease < 1.3f) c->ease = 1.3f;
 
